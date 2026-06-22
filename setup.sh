@@ -259,26 +259,22 @@ setup_nodejs() {
     fi
 
     show_progress "Очистка старой версии Node.js..."
-    log_info "Удаление старого пакета nodejs и автоочистка зависимостей..."
-    $SUDO apt-get remove -y nodejs >> "$LOG_FILE" 2>&1 || true
-    $SUDO apt-get purge -y nodejs >> "$LOG_FILE" 2>&1 || true
+    log_info "Удаление старых пакетов nodejs/npm и очистка репозиториев..."
+    $SUDO apt-get remove -y nodejs npm >> "$LOG_FILE" 2>&1 || true
+    $SUDO apt-get purge -y nodejs npm >> "$LOG_FILE" 2>&1 || true
+    $SUDO rm -f /etc/apt/sources.list.d/nodesource.list >> "$LOG_FILE" 2>&1 || true
     $SUDO apt-get autoremove -y >> "$LOG_FILE" 2>&1 || true
 
-    show_progress "Настройка NodeSource для Node.js v${node_choice}.x..."
-    log_info "Настройка NodeSource репозитория для Node.js v${node_choice}.x"
-
-    $SUDO apt-get update >> "$LOG_FILE" 2>&1
-    $SUDO apt-get install -y ca-certificates curl gnupg >> "$LOG_FILE" 2>&1
-    
-    # Добавление ключа NodeSource GPG
-    $SUDO mkdir -p /etc/apt/keyrings >> "$LOG_FILE" 2>&1
-    $SUDO curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | $SUDO gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg --yes >> "$LOG_FILE" 2>&1
-
-    # Добавление репозитория NodeSource
-    echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_${node_choice}.x nodistro main" | $SUDO tee /etc/apt/sources.list.d/nodesource.list > /dev/null
+    show_progress "Подключение репозитория NodeSource v${node_choice}.x..."
+    log_info "Запуск скрипта NodeSource для версии ${node_choice}..."
+    if [ "$EUID" -ne 0 ]; then
+        curl -fsSL "https://deb.nodesource.com/setup_${node_choice}.x" | $SUDO -E bash - >> "$LOG_FILE" 2>&1
+    else
+        curl -fsSL "https://deb.nodesource.com/setup_${node_choice}.x" | bash - >> "$LOG_FILE" 2>&1
+    fi
 
     show_progress "Установка Node.js v${node_choice}.x..."
-    $SUDO apt-get update >> "$LOG_FILE" 2>&1
+    log_info "Установка пакета nodejs..."
     $SUDO apt-get install -y nodejs >> "$LOG_FILE" 2>&1
 
     local installed_node_ver
