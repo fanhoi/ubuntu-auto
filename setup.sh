@@ -38,6 +38,19 @@ APT_UPDATED=false
 # Флаг автоматического выполнения (подавляет промежуточные msgbox-окна успешного завершения шагов)
 AUTO_MODE=false
 
+# Глобальный список временных файлов для последующей очистки при выходе
+declare -a TEMP_FILES=()
+
+cleanup_temp_files() {
+    for f in "${TEMP_FILES[@]}"; do
+        if [ -n "$f" ] && [ -f "$f" ]; then
+            rm -f "$f"
+        fi
+    done
+}
+# Перехват сигналов завершения и прерывания для очистки временных файлов
+trap cleanup_temp_files EXIT INT TERM
+
 # ==============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ==============================================================================
@@ -255,6 +268,7 @@ setup_base_packages() {
     local total=${#pkgs_to_install[@]}
     local tmpfail
     tmpfail=$(mktemp)
+    TEMP_FILES+=("$tmpfail")
 
     {
         local i=0
@@ -352,6 +366,7 @@ setup_docker() {
     # Временный файл для передачи ошибок из сабшелла gauge
     local tmpfail
     tmpfail=$(mktemp)
+    TEMP_FILES+=("$tmpfail")
 
     # Поэтапная установка Docker с прогресс-баром
     {
@@ -546,6 +561,7 @@ setup_nodejs() {
     # Временный файл для передачи ошибок из сабшелла gauge
     local tmpfail
     tmpfail=$(mktemp)
+    TEMP_FILES+=("$tmpfail")
 
     # Поэтапная установка Node.js с прогресс-баром
     {
