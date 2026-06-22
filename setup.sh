@@ -223,9 +223,15 @@ setup_nodejs() {
     
     if [ -n "$api_response" ] && command -v jq >/dev/null 2>&1; then
         # Читаем мажорные версии LTS релизов
+        local is_first=true
         while read -r ver; do
             if [ -n "$ver" ]; then
-                node_versions+=("$ver" "Node.js v$ver LTS")
+                local status="OFF"
+                if [ "$is_first" = true ]; then
+                    status="ON"
+                    is_first=false
+                fi
+                node_versions+=("$ver" "Node.js v$ver LTS" "$status")
             fi
         done < <(echo "$api_response" | jq -r '.[] | select(.lts != false) | .version' | cut -d'.' -f1 | uniq | sed 's/v//' | head -n 4)
     fi
@@ -234,9 +240,9 @@ setup_nodejs() {
     if [ ${#node_versions[@]} -eq 0 ]; then
         log_info "Не удалось получить версии через API, используем резервный список."
         node_versions=(
-            "22" "Node.js v22 (Текущая LTS)"
-            "20" "Node.js v20 (Предыдущая LTS)"
-            "18" "Node.js v18 (Старая LTS)"
+            "22" "Node.js v22 (Текущая LTS)" "ON"
+            "20" "Node.js v20 (Предыдущая LTS)" "OFF"
+            "18" "Node.js v18 (Старая LTS)" "OFF"
         )
     fi
 
