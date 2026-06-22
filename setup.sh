@@ -299,6 +299,15 @@ Subsystem sftp /usr/lib/openssh/sftp-server" | $SUDO tee /etc/ssh/sshd_config > 
 
 # Установка Docker, Docker Compose плагина и создание совместимого симлинка
 setup_docker() {
+    # Проверка, установлен ли уже Docker
+    if command -v docker >/dev/null 2>&1; then
+        local current_docker_ver
+        current_docker_ver=$(docker -v 2>/dev/null | awk '{print $3}' | sed 's/,//')
+        if ! whiptail --title "Установка Docker" --yesno "Docker уже установлен (версия: $current_docker_ver).\nХотите переустановить или обновить его?" 10 70; then
+            return 0
+        fi
+    fi
+
     # Определяем URL репозитория и кодовое имя дистрибутива ДО запуска gauge
     local repo_url="https://download.docker.com/linux/ubuntu"
     local codename=""
@@ -424,6 +433,15 @@ setup_docker() {
 
 # Динамический опрос версий Node.js и их установка
 setup_nodejs() {
+    # Проверка, установлен ли уже Node.js
+    if command -v node >/dev/null 2>&1; then
+        local current_node_ver
+        current_node_ver=$(node -v 2>/dev/null)
+        if ! whiptail --title "Установка Node.js" --yesno "Node.js уже установлен (версия: $current_node_ver).\nХотите переустановить или сменить версию?" 10 70; then
+            return 0
+        fi
+    fi
+
     show_progress "Получение списка актуальных версий Node.js..."
 
     # Скачиваем список версий в формате JSON, берем Current (последний) и LTS релизы
@@ -549,12 +567,34 @@ setup_nodejs() {
 # Меню раздела: Настройка сервера
 menu_server_settings() {
     while true; do
+        local locale_desc="Установить русскую локаль (ru_RU.UTF-8)"
+        local locale_state="ON"
+        if locale 2>/dev/null | grep -q "LANG=ru_RU.UTF-8"; then
+            locale_desc="Установить русскую локаль (ru_RU.UTF-8) (уже установлена)"
+            locale_state="OFF"
+        fi
+
+        local tz_desc="Установить часовой пояс Asia/Novokuznetsk"
+        local tz_state="ON"
+        if timedatectl show --property=Timezone 2>/dev/null | grep -q "Asia/Novokuznetsk"; then
+            tz_desc="Установить часовой пояс Asia/Novokuznetsk (уже установлен)"
+            tz_state="OFF"
+        fi
+
+        local lxc_desc="Настроить автологин root для LXC Proxmox"
+        local lxc_state="OFF"
+        if [ -f /etc/systemd/system/container-getty@1.service.d/override.conf ] && \
+           grep -q "agetty --autologin root" /etc/systemd/system/container-getty@1.service.d/override.conf 2>/dev/null; then
+            lxc_desc="Настроить автологин root для LXC Proxmox (уже настроен)"
+            lxc_state="OFF"
+        fi
+
         local server_choice
         server_choice=$(whiptail --title "Настройка сервера" --checklist \
             "Выберите действия по настройке системы (клавиша Пробел для выбора):" 16 75 3 \
-            "LOCALE" "Установить русскую локаль (ru_RU.UTF-8)" ON \
-            "TIMEZONE" "Установить часовой пояс Asia/Novokuznetsk" ON \
-            "LXC_AUTO" "Настроить автологин root для LXC Proxmox" OFF 3>&1 1>&2 2>&3)
+            "LOCALE" "$locale_desc" "$locale_state" \
+            "TIMEZONE" "$tz_desc" "$tz_state" \
+            "LXC_AUTO" "$lxc_desc" "$lxc_state" 3>&1 1>&2 2>&3)
 
         if [ $? -ne 0 ]; then
             break # Возврат в главное меню
@@ -578,15 +618,57 @@ menu_server_settings() {
 # Меню раздела: Установка базовых программ
 menu_base_apps() {
     while true; do
+        local nano_desc="Удобный текстовый редактор Nano"
+        local nano_state="ON"
+        if command -v nano >/dev/null 2>&1; then
+            nano_desc="Удобный текстовый редактор Nano (уже установлено)"
+            nano_state="OFF"
+        fi
+
+        local zip_desc="Архиваторы zip и unzip"
+        local zip_state="ON"
+        if command -v zip >/dev/null 2>&1; then
+            zip_desc="Архиваторы zip и unzip (уже установлены)"
+            zip_state="OFF"
+        fi
+
+        local git_desc="Система контроля версий Git"
+        local git_state="ON"
+        if command -v git >/dev/null 2>&1; then
+            git_desc="Система контроля версий Git (уже установлен)"
+            git_state="OFF"
+        fi
+
+        local ssh_desc="SSH-сервер openssh-server"
+        local ssh_state="ON"
+        if dpkg -s openssh-server >/dev/null 2>&1; then
+            ssh_desc="SSH-сервер openssh-server (уже установлен)"
+            ssh_state="OFF"
+        fi
+
+        local speedtest_desc="Консольный тест скорости Speedtest CLI"
+        local speedtest_state="ON"
+        if command -v speedtest >/dev/null 2>&1 || command -v speedtest-cli >/dev/null 2>&1; then
+            speedtest_desc="Консольный тест скорости Speedtest CLI (уже установлен)"
+            speedtest_state="OFF"
+        fi
+
+        local iperf_desc="Утилита измерения сети iperf3"
+        local iperf_state="ON"
+        if command -v iperf3 >/dev/null 2>&1; then
+            iperf_desc="Утилита измерения сети iperf3 (уже установлена)"
+            iperf_state="OFF"
+        fi
+
         local app_choices
         app_choices=$(whiptail --title "Установка базового ПО" --checklist \
             "Выберите программы для установки (клавиша Пробел для выбора):" 17 75 6 \
-            "NANO" "Удобный текстовый редактор Nano" ON \
-            "ZIP" "Архиваторы zip и unzip" ON \
-            "GIT" "Система контроля версий Git" ON \
-            "SSH" "SSH-сервер openssh-server" ON \
-            "SPEEDTEST" "Консольный тест скорости Speedtest CLI" ON \
-            "IPERF" "Утилита измерения сети iperf3" ON 3>&1 1>&2 2>&3)
+            "NANO" "$nano_desc" "$nano_state" \
+            "ZIP" "$zip_desc" "$zip_state" \
+            "GIT" "$git_desc" "$git_state" \
+            "SSH" "$ssh_desc" "$ssh_state" \
+            "SPEEDTEST" "$speedtest_desc" "$speedtest_state" \
+            "IPERF" "$iperf_desc" "$iperf_state" 3>&1 1>&2 2>&3)
 
         if [ $? -ne 0 ]; then
             break # Возврат в главное меню
@@ -600,13 +682,27 @@ menu_base_apps() {
 # Главное меню скрипта автонастройки
 main_menu() {
     while true; do
+        local docker_status=""
+        if command -v docker >/dev/null 2>&1; then
+            local d_ver
+            d_ver=$(docker -v 2>/dev/null | awk '{print $3}' | sed 's/,//')
+            docker_status=" [Установлен: $d_ver]"
+        fi
+
+        local node_status=""
+        if command -v node >/dev/null 2>&1; then
+            local n_ver
+            n_ver=$(node -v 2>/dev/null)
+            node_status=" [Установлен: $n_ver]"
+        fi
+
         local menu_choice
         menu_choice=$(whiptail --title "Server Auto Setup Script v1.0" --menu \
             "Выберите раздел для продолжения настройки:" 15 75 5 \
             "1" "Настройка сервера (Локаль, Таймзона, LXC Автологин)" \
             "2" "Установка базового ПО (Nano, Zip, Git, SSH, Сетевые утилиты)" \
-            "3" "Установка Docker и Docker Compose" \
-            "4" "Установка Node.js (динамический выбор версии)" \
+            "3" "Установка Docker и Docker Compose$docker_status" \
+            "4" "Установка Node.js (динамический выбор версии)$node_status" \
             "5" "Выйти из скрипта" 3>&1 1>&2 2>&3)
 
         if [ $? -ne 0 ] || [ "$menu_choice" = "5" ]; then
