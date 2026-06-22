@@ -282,15 +282,20 @@ setup_docker() {
     local codename
     codename=$(. /etc/os-release && echo "$VERSION_CODENAME" 2>/dev/null || . /etc/os-release && echo "$VERSION_CODENODE")
     
+    # Если не удалось получить из /etc/os-release, пробуем lsb_release
+    if [ -z "$codename" ] && command -v lsb_release >/dev/null 2>&1; then
+        codename=$(lsb_release -cs 2>/dev/null)
+    fi
+    
     if [ "$OS_ID" = "debian" ]; then
         repo_url="https://download.docker.com/linux/debian"
         if [ -z "$codename" ]; then
-            codename="bookworm"
+            codename="bookworm" # Крайний резервный вариант
         fi
     else
         # По умолчанию Ubuntu
         if [ -z "$codename" ]; then
-            codename="jammy"
+            codename="jammy" # Крайний резервный вариант
         fi
     fi
 
