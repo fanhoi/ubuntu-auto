@@ -85,29 +85,12 @@ setup_russian_locale() {
     show_progress "Настройка русской локали (ru_RU.UTF-8)..."
     log_info "Запуск настройки русской локали..."
     
-    # Устанавливаем необходимые пакеты локализации
-    $SUDO apt-get install -y locales language-pack-ru language-pack-ru-base >> "$LOG_FILE" 2>&1
+    $SUDO apt-get update >> "$LOG_FILE" 2>&1
+    $SUDO apt-get install -y language-pack-ru >> "$LOG_FILE" 2>&1
+    $SUDO update-locale LANG=ru_RU.UTF-8 >> "$LOG_FILE" 2>&1
     
-    # Генерируем локаль
-    $SUDO locale-gen ru_RU.UTF-8 >> "$LOG_FILE" 2>&1
-    
-    # Принудительно настраиваем системные переменные в /etc/default/locale
-    echo "LANG=ru_RU.UTF-8" | $SUDO tee /etc/default/locale > /dev/null
-    echo "LANGUAGE=ru_RU:ru" | $SUDO tee -a /etc/default/locale > /dev/null
-    echo "LC_ALL=ru_RU.UTF-8" | $SUDO tee -a /etc/default/locale > /dev/null
-    
-    # Обновляем локали через update-locale
-    $SUDO update-locale LANG=ru_RU.UTF-8 LANGUAGE=ru_RU:ru LC_ALL=ru_RU.UTF-8 >> "$LOG_FILE" 2>&1
-    
-    # Прописываем экспорт локали в глобальный bashrc для гарантированного применения в сессиях
-    if ! grep -q "ru_RU.UTF-8" /etc/bash.bashrc 2>/dev/null; then
-        echo 'export LANG=ru_RU.UTF-8' | $SUDO tee -a /etc/bash.bashrc > /dev/null
-        echo 'export LANGUAGE=ru_RU:ru' | $SUDO tee -a /etc/bash.bashrc > /dev/null
-        echo 'export LC_ALL=ru_RU.UTF-8' | $SUDO tee -a /etc/bash.bashrc > /dev/null
-    fi
-    
-    log_info "Локаль настроена на ru_RU.UTF-8. Изменения применятся после релогина или перезагрузки."
-    whiptail --title "Настройка локали" --msgbox "Локаль ru_RU.UTF-8 успешно установлена на систему!\nПосле завершения настройки рекомендуется перезагрузить сервер или переподключиться по SSH." 10 60
+    log_info "Локаль настроена на ru_RU.UTF-8 через update-locale."
+    whiptail --title "Настройка локали" --msgbox "Русский язык успешно установлен!\nИзменения вступят в силу после перезагрузки сервера или нового входа по SSH." 10 60
 }
 
 # Установка часового пояса "Asia/Novokuznetsk"
@@ -290,7 +273,7 @@ setup_nodejs() {
 
     show_progress "Установка Node.js v${node_choice}.x..."
     $SUDO apt-get update >> "$LOG_FILE" 2>&1
-    $SUDO apt-get install -y nodejs >> "$LOG_FILE" 2>&1
+    $SUDO apt-get install -y --allow-downgrades nodejs >> "$LOG_FILE" 2>&1
 
     local installed_node_ver
     installed_node_ver=$(node -v 2>/dev/null || echo "Неизвестно")
