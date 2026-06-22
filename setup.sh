@@ -10,6 +10,10 @@
 set -e
 set -o pipefail
 
+# Принудительная установка UTF-8 локали для корректного отображения кириллицы в whiptail
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+
 # Файл лога выполнения скрипта
 LOG_FILE="/var/log/ubuntu-setup.log"
 
