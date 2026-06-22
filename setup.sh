@@ -485,26 +485,54 @@ setup_nodejs() {
     $SUDO rm -f /etc/apt/sources.list.d/nodesource.list >/dev/null 2>&1 || true
     $SUDO apt-get autoremove -y >/dev/null 2>&1 || true
 
-    show_progress "Подключение репозитория NodeSource v${node_choice}.x..."
-    local setup_status
-    if [ "$EUID" -ne 0 ]; then
-        curl -fsSL "https://deb.nodesource.com/setup_${node_choice}.x" | $SUDO -E bash - >/dev/null 2>&1
-        setup_status=$?
-    else
-        curl -fsSL "https://deb.nodesource.com/setup_${node_choice}.x" | bash - >/dev/null 2>&1
-        setup_status=$?
-    fi
+    # Временный файл для передачи ошибок из сабшелла gauge
+    local tmpfail
+    tmpfail=$(mktemp)
 
-    if [ $setup_status -ne 0 ]; then
-        whiptail --title "Ошибка" --msgbox "Не удалось подключить репозиторий NodeSource для Node.js v${node_choice}.x." 10 60
-        return 1
-    fi
+    # Поэтапная установка Node.js с прогресс-баром
+    {
+        # Шаг 1/3: Подключение репозитория NodeSource
+        printf "XXX\n20\n[1/3] Подключение репозитория NodeSource v%s.x...\nXXX\n" "$node_choice"
+        local setup_status=0
+        if [ "$EUID" -ne 0 ]; then
+            curl -fsSL "https://deb.nodesource.com/setup_${node_choice}.x" | $SUDO -E bash - >/dev/null 2>&1
+            setup_status=$?
+        else
+            curl -fsSL "https://deb.nodesource.com/setup_${node_choice}.x" | bash - >/dev/null 2>&1
+            setup_status=$?
+        fi
+        if [ $setup_status -ne 0 ]; then
+            echo "ERR_NODESOURCE" >> "$tmpfail"
+            exit 0
+        fi
 
-    show_progress "Установка Node.js v${node_choice}.x..."
-    if ! $SUDO apt-get install -y nodejs >/dev/null 2>&1; then
-        whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакет nodejs из репозитория NodeSource." 10 60
-        return 1
+        # Шаг 2/3: Установка nodejs
+        printf "XXX\n60\n[2/3] Установка Node.js v%s.x (может занять несколько минут)...\nXXX\n" "$node_choice"
+        if ! $SUDO apt-get install -y nodejs >/dev/null 2>&1; then
+            echo "ERR_INSTALL" >> "$tmpfail"
+            exit 0
+        fi
+
+        # Шаг 3/3: Готово
+        printf "XXX\n100\n[3/3] Готово!\nXXX\n"
+
+    } | whiptail --title "Установка Node.js" --gauge "Подготовка..." 8 65 0
+
+    # Проверяем ошибки из сабшелла
+    if [ -s "$tmpfail" ]; then
+        local node_err
+        node_err=$(cat "$tmpfail")
+        rm -f "$tmpfail"
+        case "$node_err" in
+            ERR_NODESOURCE)
+                whiptail --title "Ошибка" --msgbox "Не удалось подключить репозиторий NodeSource для Node.js v${node_choice}.x." 10 60
+                return 1 ;;
+            ERR_INSTALL)
+                whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакет nodejs из репозитория NodeSource." 10 60
+                return 1 ;;
+        esac
     fi
+    rm -f "$tmpfail"
 
     local installed_node_ver
     installed_node_ver=$(node -v 2>/dev/null || echo "Неизвестно")
