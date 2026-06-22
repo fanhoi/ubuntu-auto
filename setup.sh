@@ -32,6 +32,9 @@ fi
 # Флаг однократного обновления индекса APT за одну сессию скрипта
 APT_UPDATED=false
 
+# Флаг автоматического выполнения (подавляет промежуточные msgbox-окна успешного завершения шагов)
+AUTO_MODE=false
+
 # ==============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ==============================================================================
@@ -159,7 +162,9 @@ setup_russian_locale() {
         return 1
     fi
     
-    whiptail --title "Настройка локали" --msgbox "Русский язык успешно установлен!\nИзменения вступят в силу после перезагрузки сервера или нового входа по SSH." 10 70
+    if [ "$AUTO_MODE" = false ]; then
+        whiptail --title "Настройка локали" --msgbox "Русский язык успешно установлен!\nИзменения вступят в силу после перезагрузки сервера или нового входа по SSH." 10 70
+    fi
 }
 
 # Установка часового пояса "Asia/Novokuznetsk"
@@ -173,7 +178,9 @@ setup_timezone() {
     
     local current_time
     current_time=$(date)
-    whiptail --title "Настройка времени" --msgbox "Часовой пояс Asia/Novokuznetsk успешно установлен.\nТекущее системное время:\n$current_time" 10 70
+    if [ "$AUTO_MODE" = false ]; then
+        whiptail --title "Настройка времени" --msgbox "Часовой пояс Asia/Novokuznetsk успешно установлен.\nТекущее системное время:\n$current_time" 10 70
+    fi
 }
 
 # Настройка автологина root для LXC-контейнеров Proxmox
@@ -197,12 +204,15 @@ ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,3840
         return 1
     fi
     
-    whiptail --title "Настройка LXC" --msgbox "Автоматический вход root для контейнера LXC успешно настроен!\nИзменения применятся при следующем запуске контейнера." 10 70
+    if [ "$AUTO_MODE" = false ]; then
+        whiptail --title "Настройка LXC" --msgbox "Автоматический вход root для контейнера LXC успешно настроен!\nИзменения применятся при следующем запуске контейнера." 10 70
+    fi
 }
 
 # Установка выбранных базовых программ
 setup_base_packages() {
     local choices="$1"
+    local mode="$2"
     if [ -z "$choices" ]; then
         whiptail --title "Установка ПО" --msgbox "Вы не выбрали ни одной программы для установки." 8 60
         return
@@ -224,7 +234,9 @@ setup_base_packages() {
     # Спрашиваем про преднастройку SSH до начала установки
     local configure_ssh=false
     if [[ "$choices" =~ "SSH" ]]; then
-        if whiptail --title "Настройка SSH" --yesno "Вы выбрали установку SSH.\nХотите применить вашу преднастройку конфигурации?\n\n- Порт: 22\n- Вход для root по паролю: Разрешен\n- Ограничение доступа: Только из локальных сетей (192.168.*, 10.*, 172.*, 127.*)" 14 78; then
+        if [ "$mode" = "auto" ]; then
+            configure_ssh=true
+        elif whiptail --title "Настройка SSH" --yesno "Вы выбрали установку SSH.\nХотите применить вашу преднастройку конфигурации?\n\n- Порт: 22\n- Вход для root по паролю: Разрешен\n- Ограничение доступа: Только из локальных сетей (192.168.*, 10.*, 172.*, 127.*)" 14 78; then
             configure_ssh=true
         fi
     fi
@@ -287,20 +299,27 @@ Subsystem sftp /usr/lib/openssh/sftp-server" | $SUDO tee /etc/ssh/sshd_config > 
 
             # Перезапускаем сервис SSH (пробуем ssh — Ubuntu, при ошибке пробуем sshd — Debian)
             if $SUDO systemctl restart ssh >/dev/null 2>&1 || $SUDO systemctl restart sshd >/dev/null 2>&1; then
-                whiptail --title "Настройка SSH" --msgbox "Преднастройка конфигурации SSH успешно применена!\nСлужба OpenSSH перезапущена." 10 68
+                if [ "$AUTO_MODE" = false ]; then
+                    whiptail --title "Настройка SSH" --msgbox "Преднастройка конфигурации SSH успешно применена!\nСлужба OpenSSH перезапущена." 10 68
+                fi
             else
-                whiptail --title "Предупреждение" --msgbox "Конфигурация SSH записана, но не удалось перезапустить службу ssh/sshd." 10 70
+                if [ "$AUTO_MODE" = false ]; then
+                    whiptail --title "Предупреждение" --msgbox "Конфигурация SSH записана, но не удалось перезапустить службу ssh/sshd." 10 70
+                fi
             fi
         fi
     fi
 
-    whiptail --title "Установка ПО" --msgbox "Следующие программы успешно установлены:\n${pkgs_to_install[*]}" 10 70
+    if [ "$AUTO_MODE" = false ]; then
+        whiptail --title "Установка ПО" --msgbox "Следующие программы успешно установлены:\n${pkgs_to_install[*]}" 10 70
+    fi
 }
 
 # Установка Docker, Docker Compose плагина и создание совместимого симлинка
 setup_docker() {
+    local auto_mode="$1"
     # Проверка, установлен ли уже Docker
-    if command -v docker >/dev/null 2>&1; then
+    if [ -z "$auto_mode" ] && command -v docker >/dev/null 2>&1; then
         local current_docker_ver
         current_docker_ver=$(docker -v 2>/dev/null | awk '{print $3}' | sed 's/,//')
         if ! whiptail --title "Установка Docker" --yesno "Docker уже установлен (версия: $current_docker_ver).\nХотите переустановить или обновить его?" 10 70; then
@@ -428,13 +447,16 @@ setup_docker() {
     local compose_ver
     compose_ver=$(docker compose version 2>/dev/null || echo "Неизвестно")
 
-    whiptail --title "Установка Docker" --msgbox "Docker и Docker Compose успешно установлены!\n\nВерсия Docker: $docker_ver\nВерсия Compose: $compose_ver\n\n$docker_group_msg" 14 78
+    if [ "$AUTO_MODE" = false ]; then
+        whiptail --title "Установка Docker" --msgbox "Docker и Docker Compose успешно установлены!\n\nВерсия Docker: $docker_ver\nВерсия Compose: $compose_ver\n\n$docker_group_msg" 14 78
+    fi
 }
 
 # Динамический опрос версий Node.js и их установка
 setup_nodejs() {
+    local target_version="$1"
     # Проверка, установлен ли уже Node.js
-    if command -v node >/dev/null 2>&1; then
+    if [ -z "$target_version" ] && command -v node >/dev/null 2>&1; then
         local current_node_ver
         current_node_ver=$(node -v 2>/dev/null)
         if ! whiptail --title "Установка Node.js" --yesno "Node.js уже установлен (версия: $current_node_ver).\nХотите переустановить или сменить версию?" 10 70; then
@@ -487,13 +509,27 @@ setup_nodejs() {
         )
     fi
 
-    # Показываем TUI-меню выбора версии Node.js
+    # Показываем TUI-меню выбора версии Node.js или выбираем автоматически
     local node_choice
-    node_choice=$(whiptail --title "Выбор версии Node.js" --radiolist \
-        "Выберите мажорную версию Node.js для установки через репозиторий NodeSource:" 16 75 5 \
-        "${node_versions[@]}" 3>&1 1>&2 2>&3)
+    if [ -n "$target_version" ]; then
+        # Определение последней версии
+        local latest_ver="26" # Дефолтный фолбек
+        if [ -n "$api_response" ] && command -v jq >/dev/null 2>&1; then
+            latest_ver=$(echo "$api_response" | jq -r '.[0].version' | cut -d'.' -f1 | sed 's/v//')
+        fi
+        
+        if [ "$target_version" = "latest" ]; then
+            node_choice="$latest_ver"
+        else
+            node_choice="$target_version"
+        fi
+    else
+        node_choice=$(whiptail --title "Выбор версии Node.js" --radiolist \
+            "Выберите мажорную версию Node.js для установки через репозиторий NodeSource:" 16 75 5 \
+            "${node_versions[@]}" 3>&1 1>&2 2>&3)
+    fi
 
-    if [ $? -ne 0 ] || [ -z "$node_choice" ]; then
+    if [ -z "$node_choice" ]; then
         return
     fi
 
@@ -557,7 +593,9 @@ setup_nodejs() {
     local installed_npm_ver
     installed_npm_ver=$(npm -v 2>/dev/null || echo "Неизвестно")
 
-    whiptail --title "Установка Node.js" --msgbox "Node.js успешно установлен!\n\nВерсия Node.js: $installed_node_ver\nВерсия npm: $installed_npm_ver" 12 70
+    if [ "$AUTO_MODE" = false ]; then
+        whiptail --title "Установка Node.js" --msgbox "Node.js успешно установлен!\n\nВерсия Node.js: $installed_node_ver\nВерсия npm: $installed_npm_ver" 12 70
+    fi
 }
 
 # ==============================================================================
@@ -679,6 +717,31 @@ menu_base_apps() {
     done
 }
 
+# Выполнить полную автоматическую настройку и установку всего ПО
+setup_all() {
+    # Включаем глобальный автоматический режим для подавления промежуточных msgbox
+    AUTO_MODE=true
+
+    # 1. Применяем настройки сервера
+    setup_russian_locale || true
+    setup_timezone || true
+    setup_lxc_autologin || true
+
+    # 2. Устанавливаем все базовое ПО с автонастройкой SSH
+    setup_base_packages "NANO ZIP GIT SSH SPEEDTEST IPERF" "auto"
+
+    # 3. Устанавливаем Docker
+    setup_docker "auto"
+
+    # 4. Устанавливаем Node.js последней версии
+    setup_nodejs "latest"
+
+    # Выключаем автоматический режим
+    AUTO_MODE=false
+
+    whiptail --title "Выполнить всё" --msgbox "Полная автоматическая настройка завершена успешно!\nВсе системные параметры настроены, базовые программы, Docker и Node.js установлены." 10 70
+}
+
 # Главное меню скрипта автонастройки
 main_menu() {
     while true; do
@@ -698,14 +761,15 @@ main_menu() {
 
         local menu_choice
         menu_choice=$(whiptail --title "Server Auto Setup Script v1.0" --menu \
-            "Выберите раздел для продолжения настройки:" 15 75 5 \
+            "Выберите раздел для продолжения настройки:" 16 75 6 \
             "1" "Настройка сервера (Локаль, Таймзона, LXC Автологин)" \
             "2" "Установка базового ПО (Nano, Zip, Git, SSH, Сетевые утилиты)" \
             "3" "Установка Docker и Docker Compose$docker_status" \
             "4" "Установка Node.js (динамический выбор версии)$node_status" \
-            "5" "Выйти из скрипта" 3>&1 1>&2 2>&3)
+            "5" "Выполнить всё (автоматическая установка всех настроек и программ)" \
+            "6" "Выйти из скрипта" 3>&1 1>&2 2>&3)
 
-        if [ $? -ne 0 ] || [ "$menu_choice" = "5" ]; then
+        if [ $? -ne 0 ] || [ "$menu_choice" = "6" ]; then
             break
         fi
 
@@ -721,6 +785,9 @@ main_menu() {
                 ;;
             "4")
                 setup_nodejs
+                ;;
+            "5")
+                setup_all
                 ;;
             *)
                 break
