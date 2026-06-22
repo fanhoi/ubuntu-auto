@@ -6,10 +6,6 @@
 # установку Docker, Node.js и базового ПО через TUI-меню.
 # ==============================================================================
 
-# Строгий режим обработки ошибок
-set -e
-set -o pipefail
-
 # Принудительная установка UTF-8 локали для корректного отображения кириллицы в whiptail
 export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
@@ -41,7 +37,10 @@ log_error() {
 
 # Предварительная проверка и установка зависимостей самого скрипта
 install_script_deps() {
-    $SUDO apt-get update >/dev/null 2>&1
+    if ! $SUDO apt-get update >/dev/null 2>&1; then
+        log_error "Не удалось обновить списки пакетов apt-get update перед установкой зависимостей."
+        return 1
+    fi
     
     local -a deps_needed=()
     for pkg in curl jq whiptail; do
@@ -51,7 +50,10 @@ install_script_deps() {
     done
 
     if [ ${#deps_needed[@]} -gt 0 ]; then
-        $SUDO apt-get install -y "${deps_needed[@]}" >/dev/null 2>&1
+        if ! $SUDO apt-get install -y "${deps_needed[@]}" >/dev/null 2>&1; then
+            log_error "Не удалось установить базовые зависимости скрипта: ${deps_needed[*]}."
+            exit 1
+        fi
     fi
 }
 
@@ -59,6 +61,39 @@ install_script_deps() {
 show_progress() {
     local message="$1"
     whiptail --title "Пожалуйста, подождите" --infobox "$message" 8 50
+}
+
+# Показывает информационный дашборд при входе в систему
+show_system_dashboard() {
+    local os_info
+    os_info=$(. /etc/os-release && echo "$PRETTY_NAME" 2>/dev/null || echo "Ubuntu")
+    
+    local uptime_info
+    uptime_info=$(uptime -p 2>/dev/null | sed 's/up //' || uptime 2>/dev/null)
+    
+    local disk_info
+    disk_info=$(df -h / 2>/dev/null | awk 'NR==2 {print $4 " свободно из " $2 " (использовано " $5 ")"}')
+    
+    local ram_info
+    ram_info=$(free -h 2>/dev/null | awk 'NR==2 {print $3 " из " $2}')
+    
+    local local_ip
+    local_ip=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "Не определен")
+    
+    local public_ip
+    public_ip=$(curl -s --connect-timeout 2 ifconfig.me 2>/dev/null || echo "Не удалось определить")
+    
+    local msg="Сведения о вашей системе:
+---------------------------------------------
+ОС:             $os_info
+Uptime:         $uptime_info
+Диск (/):       $disk_info
+ОЗУ:            $ram_info
+Локальный IP:   $local_ip
+Внешний IP:     $public_ip
+---------------------------------------------"
+    
+    whiptail --title "Дашборд системы" --msgbox "$msg" 15 60
 }
 
 # ==============================================================================
@@ -69,9 +104,15 @@ show_progress() {
 setup_russian_locale() {
     show_progress "Настройка русской локали (ru_RU.UTF-8)..."
     
-    $SUDO apt-get update >/dev/null 2>&1
-    $SUDO apt-get install -y language-pack-ru >/dev/null 2>&1
-    $SUDO update-locale LANG=ru_RU.UTF-8 >/dev/null 2>&1
+    if ! $SUDO apt-get update >/dev/null 2>&1 || ! $SUDO apt-get install -y language-pack-ru >/dev/null 2>&1; then
+        whiptail --title "Ошибка локализации" --msgbox "Не удалось установить пакет локализации language-pack-ru. Проверьте интернет-соединение." 10 60
+        return 1
+    fi
+    
+    if ! $SUDO update-locale LANG=ru_RU.UTF-8 >/dev/null 2>&1; then
+        whiptail --title "Ошибка локализации" --msgbox "Не удалось обновить локаль системы через update-locale." 10 60
+        return 1
+    fi
     
     whiptail --title "Настройка локали" --msgbox "Русский язык успешно установлен!\nИзменения вступят в силу после перезагрузки сервера или нового входа по SSH." 10 60
 }
@@ -79,7 +120,11 @@ setup_russian_locale() {
 # Установка часового пояса "Asia/Novokuznetsk"
 setup_timezone() {
     show_progress "Установка часового пояса Asia/Novokuznetsk..."
-    $SUDO timedatectl set-timezone Asia/Novokuznetsk >/dev/null 2>&1
+    
+    if ! $SUDO timedatectl set-timezone Asia/Novokuznetsk >/dev/null 2>&1; then
+        whiptail --title "Ошибка времени" --msgbox "Не удалось сменить часовой пояс через timedatectl." 10 60
+        return 1
+    fi
     
     local current_time
     current_time=$(date)
@@ -93,13 +138,19 @@ setup_lxc_autologin() {
     local dir="/etc/systemd/system/container-getty@1.service.d"
     local conf="$dir/override.conf"
     
-    $SUDO mkdir -p "$dir" >/dev/null 2>&1
+    if ! $SUDO mkdir -p "$dir" >/dev/null 2>&1; then
+        whiptail --title "Ошибка" --msgbox "Не удалось создать каталог:\n$dir\nПроверьте права доступа." 10 60
+        return 1
+    fi
     
     echo "[Service]
 ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 \$TERM" | $SUDO tee "$conf" > /dev/null
 
-    $SUDO systemctl daemon-reload >/dev/null 2>&1 || true
+    if ! $SUDO systemctl daemon-reload >/dev/null 2>&1; then
+        whiptail --title "Предупреждение" --msgbox "Автологин настроен, но не удалось перезагрузить демоны systemd (daemon-reload)." 10 60
+        return 1
+    fi
     
     whiptail --title "Настройка LXC" --msgbox "Автоматический вход root для контейнера LXC успешно настроен!\nИзменения применятся при следующем запуске контейнера." 10 60
 }
@@ -134,11 +185,22 @@ setup_base_packages() {
     fi
 
     show_progress "Установка выбранных пакетов: ${pkgs_to_install[*]}..."
-    $SUDO apt-get update >/dev/null 2>&1
+    if ! $SUDO apt-get update >/dev/null 2>&1; then
+        whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов apt. Проверьте подключение к сети." 10 60
+        return 1
+    fi
     
+    local -a failed_pkgs=()
     for pkg in "${pkgs_to_install[@]}"; do
-        $SUDO apt-get install -y "$pkg" >/dev/null 2>&1
+        if ! $SUDO apt-get install -y "$pkg" >/dev/null 2>&1; then
+            failed_pkgs+=("$pkg")
+        fi
     done
+
+    if [ ${#failed_pkgs[@]} -gt 0 ]; then
+        whiptail --title "Ошибка установки" --msgbox "Не удалось установить следующие программы:\n${failed_pkgs[*]}\n\nПопробуйте запустить установку заново." 10 60
+        return 1
+    fi
 
     # Дополнительная настройка для SSH, если он устанавливался
     if [[ "$choices" =~ "SSH" ]]; then
@@ -160,8 +222,11 @@ AllowUsers *@192.168.*.* *@127.0.0.1 *@10.*.*.* *@172.*.*.*
 Subsystem sftp /usr/lib/openssh/sftp-server" | $SUDO tee /etc/ssh/sshd_config > /dev/null
 
             # Перезапускаем сервис SSH
-            $SUDO systemctl restart ssh >/dev/null 2>&1 || $SUDO systemctl restart sshd >/dev/null 2>&1 || true
-            whiptail --title "Настройка SSH" --msgbox "Преднастройка конфигурации SSH успешно применена!\nСлужба OpenSSH перезапущена." 10 55
+            if ! $SUDO systemctl restart ssh >/dev/null 2>&1 && ! $SUDO systemctl restart sshd >/dev/null 2>&1; then
+                whiptail --title "Предупреждение" --msgbox "Конфигурация SSH записана, но не удалось перезапустить службу ssh/sshd." 10 60
+            else
+                whiptail --title "Настройка SSH" --msgbox "Преднастройка конфигурации SSH успешно применена!\nСлужба OpenSSH перезапущена." 10 55
+            fi
         fi
     fi
 
@@ -172,17 +237,24 @@ Subsystem sftp /usr/lib/openssh/sftp-server" | $SUDO tee /etc/ssh/sshd_config > 
 setup_docker() {
     show_progress "Установка Docker и Docker Compose..."
 
-    # ... удаляем потенциально конфликтующие старые пакеты
+    # Удаляем потенциально конфликтующие старые пакеты
     for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
         $SUDO apt-get remove -y "$pkg" >/dev/null 2>&1 || true
     done
 
     # Установка базовых утилит для репозиториев apt
-    $SUDO apt-get install -y ca-certificates curl >/dev/null 2>&1
+    if ! $SUDO apt-get install -y ca-certificates curl >/dev/null 2>&1; then
+        whiptail --title "Ошибка" --msgbox "Не удалось установить вспомогательные утилиты ca-certificates и curl." 10 60
+        return 1
+    fi
+    
     $SUDO install -m 0755 -d /etc/apt/keyrings >/dev/null 2>&1
 
     # Добавление официального GPG ключа Docker
-    $SUDO curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc >/dev/null 2>&1
+    if ! $SUDO curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc >/dev/null 2>&1; then
+        whiptail --title "Ошибка" --msgbox "Не удалось скачать GPG ключ репозитория Docker." 10 60
+        return 1
+    fi
     $SUDO chmod a+r /etc/apt/keyrings/docker.asc >/dev/null 2>&1
 
     # Определение кодового имени Ubuntu (например, focal, jammy, noble)
@@ -198,26 +270,37 @@ setup_docker() {
       "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
       $ubuntu_codename stable" | $SUDO tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-    $SUDO apt-get update >/dev/null 2>&1
+    if ! $SUDO apt-get update >/dev/null 2>&1; then
+        whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов после подключения репозитория Docker." 10 60
+        return 1
+    fi
     
     # Установка пакетов Docker Engine
-    $SUDO apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1
+    if ! $SUDO apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1; then
+        whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакеты Docker Engine." 10 60
+        return 1
+    fi
 
     # Запуск и добавление демона в автозагрузку
-    $SUDO systemctl enable docker >/dev/null 2>&1
-    $SUDO systemctl start docker >/dev/null 2>&1
+    $SUDO systemctl enable docker >/dev/null 2>&1 || true
+    $SUDO systemctl start docker >/dev/null 2>&1 || true
 
-    # Добавление пользователя в группу docker для работы без sudo
-    if [ "$EUID" -ne 0 ] && [ -n "$USER" ]; then
-        $SUDO usermod -aG docker "$USER" >/dev/null 2>&1
-        local docker_group_msg="Пользователь $USER добавлен в группу docker.\nПерезайдите в сессию для применения прав."
+    # Добавление пользователя в группу docker для работы без sudo (берем SUDO_USER, если запуск под sudo)
+    local real_user="$USER"
+    if [ -n "$SUDO_USER" ]; then
+        real_user="$SUDO_USER"
+    fi
+
+    if [ "$EUID" -ne 0 ] || [ "$real_user" != "root" ]; then
+        $SUDO usermod -aG docker "$real_user" >/dev/null 2>&1
+        local docker_group_msg="Пользователь $real_user добавлен в группу docker.\nПерезайдите в сессию для применения прав."
     else
         local docker_group_msg="Docker установлен для пользователя root."
     fi
 
     # Создание символической ссылки docker-compose для обратной совместимости
     if [ -f /usr/libexec/docker/cli-plugins/docker-compose ]; then
-        $SUDO ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+        $SUDO ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose >/dev/null 2>&1
     fi
 
     local docker_ver
@@ -292,14 +375,25 @@ setup_nodejs() {
     $SUDO apt-get autoremove -y >/dev/null 2>&1 || true
 
     show_progress "Подключение репозитория NodeSource v${node_choice}.x..."
+    local setup_status
     if [ "$EUID" -ne 0 ]; then
         curl -fsSL "https://deb.nodesource.com/setup_${node_choice}.x" | $SUDO -E bash - >/dev/null 2>&1
+        setup_status=$?
     else
         curl -fsSL "https://deb.nodesource.com/setup_${node_choice}.x" | bash - >/dev/null 2>&1
+        setup_status=$?
+    fi
+
+    if [ $setup_status -ne 0 ]; then
+        whiptail --title "Ошибка" --msgbox "Не удалось подключить репозиторий NodeSource для Node.js v${node_choice}.x." 10 60
+        return 1
     fi
 
     show_progress "Установка Node.js v${node_choice}.x..."
-    $SUDO apt-get install -y nodejs >/dev/null 2>&1
+    if ! $SUDO apt-get install -y nodejs >/dev/null 2>&1; then
+        whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакет nodejs из репозитория NodeSource." 10 60
+        return 1
+    fi
 
     local installed_node_ver
     installed_node_ver=$(node -v 2>/dev/null || echo "Неизвестно")
@@ -342,7 +436,7 @@ menu_server_settings() {
     done
 }
 
-# ... Меню раздела: Установка базовых программ
+# Меню раздела: Установка базовых программ
 menu_base_apps() {
     while true; do
         local app_choices
@@ -409,6 +503,9 @@ clear
 
 # Сначала устанавливаем curl, jq, whiptail
 install_script_deps
+
+# Показываем информационный дашборд при входе
+show_system_dashboard
 
 # Переходим в главное TUI-меню
 main_menu
