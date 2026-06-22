@@ -84,7 +84,7 @@ install_script_deps() {
 # Показывает окно выполнения процесса (информационное сообщение)
 show_progress() {
     local message="$1"
-    whiptail --title "Пожалуйста, подождите" --infobox "$message" 8 50
+    whiptail --title "Пожалуйста, подождите" --infobox "$message" 8 70
 }
 
 # Показывает информационный дашборд при входе в систему
@@ -117,7 +117,7 @@ Uptime:         $uptime_info
 Внешний IP:     $public_ip
 ---------------------------------------------"
     
-    whiptail --title "Дашборд системы" --msgbox "$msg" 15 60
+    whiptail --title "Дашборд системы" --msgbox "$msg" 15 72
 }
 
 # ==============================================================================
@@ -131,13 +131,13 @@ setup_russian_locale() {
     if [ "$OS_ID" = "ubuntu" ]; then
         # Для Ubuntu ставим готовый языковой пакет
         if ! run_apt_update || ! $SUDO apt-get install -y language-pack-ru >/dev/null 2>&1; then
-            whiptail --title "Ошибка локализации" --msgbox "Не удалось установить пакет локализации language-pack-ru. Проверьте интернет-соединение." 10 60
+            whiptail --title "Ошибка локализации" --msgbox "Не удалось установить пакет локализации language-pack-ru. Проверьте интернет-соединение." 10 70
             return 1
         fi
     elif [ "$OS_ID" = "debian" ]; then
         # Для Debian устанавливаем locales и генерируем локаль вручную
         if ! run_apt_update || ! $SUDO apt-get install -y locales >/dev/null 2>&1; then
-            whiptail --title "Ошибка локализации" --msgbox "Не удалось установить пакет locales. Проверьте интернет-соединение." 10 60
+            whiptail --title "Ошибка локализации" --msgbox "Не удалось установить пакет locales. Проверьте интернет-соединение." 10 70
             return 1
         fi
         
@@ -148,18 +148,18 @@ setup_russian_locale() {
         
         # Запускаем генерацию локали
         if ! $SUDO locale-gen >/dev/null 2>&1; then
-            whiptail --title "Ошибка локализации" --msgbox "Не удалось сгенерировать локаль ru_RU.UTF-8." 10 60
+            whiptail --title "Ошибка локализации" --msgbox "Не удалось сгенерировать локаль ru_RU.UTF-8." 10 70
             return 1
         fi
     fi
     
     # Обновляем локаль системы (универсально для обеих систем)
     if ! $SUDO update-locale LANG=ru_RU.UTF-8 >/dev/null 2>&1; then
-        whiptail --title "Ошибка локализации" --msgbox "Не удалось обновить локаль системы через update-locale." 10 60
+        whiptail --title "Ошибка локализации" --msgbox "Не удалось обновить локаль системы через update-locale." 10 70
         return 1
     fi
     
-    whiptail --title "Настройка локали" --msgbox "Русский язык успешно установлен!\nИзменения вступят в силу после перезагрузки сервера или нового входа по SSH." 10 60
+    whiptail --title "Настройка локали" --msgbox "Русский язык успешно установлен!\nИзменения вступят в силу после перезагрузки сервера или нового входа по SSH." 10 70
 }
 
 # Установка часового пояса "Asia/Novokuznetsk"
@@ -167,13 +167,13 @@ setup_timezone() {
     show_progress "Установка часового пояса Asia/Novokuznetsk..."
     
     if ! $SUDO timedatectl set-timezone Asia/Novokuznetsk >/dev/null 2>&1; then
-        whiptail --title "Ошибка времени" --msgbox "Не удалось сменить часовой пояс через timedatectl." 10 60
+        whiptail --title "Ошибка времени" --msgbox "Не удалось сменить часовой пояс через timedatectl." 10 70
         return 1
     fi
     
     local current_time
     current_time=$(date)
-    whiptail --title "Настройка времени" --msgbox "Часовой пояс Asia/Novokuznetsk успешно установлен.\nТекущее системное время:\n$current_time" 10 60
+    whiptail --title "Настройка времени" --msgbox "Часовой пояс Asia/Novokuznetsk успешно установлен.\nТекущее системное время:\n$current_time" 10 70
 }
 
 # Настройка автологина root для LXC-контейнеров Proxmox
@@ -184,7 +184,7 @@ setup_lxc_autologin() {
     local conf="$dir/override.conf"
     
     if ! $SUDO mkdir -p "$dir" >/dev/null 2>&1; then
-        whiptail --title "Ошибка" --msgbox "Не удалось создать каталог:\n$dir\nПроверьте права доступа." 10 60
+        whiptail --title "Ошибка" --msgbox "Не удалось создать каталог:\n$dir\nПроверьте права доступа." 10 70
         return 1
     fi
     
@@ -193,18 +193,18 @@ ExecStart=
 ExecStart=-/sbin/agetty --autologin root --noclear --keep-baud tty%I 115200,38400,9600 \$TERM" | $SUDO tee "$conf" > /dev/null
 
     if ! $SUDO systemctl daemon-reload >/dev/null 2>&1; then
-        whiptail --title "Предупреждение" --msgbox "Автологин настроен, но не удалось перезагрузить демоны systemd (daemon-reload)." 10 60
+        whiptail --title "Предупреждение" --msgbox "Автологин настроен, но не удалось перезагрузить демоны systemd (daemon-reload)." 10 70
         return 1
     fi
     
-    whiptail --title "Настройка LXC" --msgbox "Автоматический вход root для контейнера LXC успешно настроен!\nИзменения применятся при следующем запуске контейнера." 10 60
+    whiptail --title "Настройка LXC" --msgbox "Автоматический вход root для контейнера LXC успешно настроен!\nИзменения применятся при следующем запуске контейнера." 10 70
 }
 
 # Установка выбранных базовых программ
 setup_base_packages() {
     local choices="$1"
     if [ -z "$choices" ]; then
-        whiptail --title "Установка ПО" --msgbox "Вы не выбрали ни одной программы для установки." 8 50
+        whiptail --title "Установка ПО" --msgbox "Вы не выбрали ни одной программы для установки." 8 60
         return
     fi
 
@@ -224,14 +224,14 @@ setup_base_packages() {
     # Спрашиваем про преднастройку SSH до начала установки
     local configure_ssh=false
     if [[ "$choices" =~ "SSH" ]]; then
-        if whiptail --title "Настройка SSH" --yesno "Вы выбрали установку SSH.\nХотите применить вашу преднастройку конфигурации?\n\n- Порт: 22\n- Вход для root по паролю: Разрешен\n- Ограничение доступа: Только из локальных сетей (192.168.*, 10.*, 172.*, 127.*)" 14 65; then
+        if whiptail --title "Настройка SSH" --yesno "Вы выбрали установку SSH.\nХотите применить вашу преднастройку конфигурации?\n\n- Порт: 22\n- Вход для root по паролю: Разрешен\n- Ограничение доступа: Только из локальных сетей (192.168.*, 10.*, 172.*, 127.*)" 14 78; then
             configure_ssh=true
         fi
     fi
 
     show_progress "Обновление списков пакетов APT..."
     if ! run_apt_update; then
-        whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов apt. Проверьте подключение к сети." 10 60
+        whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов apt. Проверьте подключение к сети." 10 70
         return 1
     fi
 
@@ -250,7 +250,7 @@ setup_base_packages() {
                 echo "$pkg" >> "$tmpfail"
             fi
         done
-    } | whiptail --title "Установка ПО" --gauge "Подготовка..." 8 65 0
+    } | whiptail --title "Установка ПО" --gauge "Подготовка..." 8 78 0
 
     # Читаем список неудавшихся пакетов из временного файла (сабшелл трубы не может изменять переменные родителя)
     local -a failed_pkgs=()
@@ -262,7 +262,7 @@ setup_base_packages() {
     rm -f "$tmpfail"
 
     if [ ${#failed_pkgs[@]} -gt 0 ]; then
-        whiptail --title "Ошибка установки" --msgbox "Не удалось установить следующие программы:\n${failed_pkgs[*]}\n\nПопробуйте запустить установку заново." 10 60
+        whiptail --title "Ошибка установки" --msgbox "Не удалось установить следующие программы:\n${failed_pkgs[*]}\n\nПопробуйте запустить установку заново." 10 70
         return 1
     fi
 
@@ -287,14 +287,14 @@ Subsystem sftp /usr/lib/openssh/sftp-server" | $SUDO tee /etc/ssh/sshd_config > 
 
             # Перезапускаем сервис SSH (пробуем ssh — Ubuntu, при ошибке пробуем sshd — Debian)
             if $SUDO systemctl restart ssh >/dev/null 2>&1 || $SUDO systemctl restart sshd >/dev/null 2>&1; then
-                whiptail --title "Настройка SSH" --msgbox "Преднастройка конфигурации SSH успешно применена!\nСлужба OpenSSH перезапущена." 10 55
+                whiptail --title "Настройка SSH" --msgbox "Преднастройка конфигурации SSH успешно применена!\nСлужба OpenSSH перезапущена." 10 68
             else
-                whiptail --title "Предупреждение" --msgbox "Конфигурация SSH записана, но не удалось перезапустить службу ssh/sshd." 10 60
+                whiptail --title "Предупреждение" --msgbox "Конфигурация SSH записана, но не удалось перезапустить службу ssh/sshd." 10 70
             fi
         fi
     fi
 
-    whiptail --title "Установка ПО" --msgbox "Следующие программы успешно установлены:\n${pkgs_to_install[*]}" 10 60
+    whiptail --title "Установка ПО" --msgbox "Следующие программы успешно установлены:\n${pkgs_to_install[*]}" 10 70
 }
 
 # Установка Docker, Docker Compose плагина и создание совместимого симлинка
@@ -369,7 +369,7 @@ setup_docker() {
 
         printf "XXX\n100\n[6/6] Готово!\nXXX\n"
 
-    } | whiptail --title "Установка Docker" --gauge "Подготовка..." 8 65 0
+    } | whiptail --title "Установка Docker" --gauge "Подготовка..." 8 78 0
 
     # Проверяем наличие ошибок из сабшелла
     if [ -s "$tmpfail" ]; then
@@ -378,16 +378,16 @@ setup_docker() {
         rm -f "$tmpfail"
         case "$docker_err" in
             ERR_CACERT)
-                whiptail --title "Ошибка" --msgbox "Не удалось установить ca-certificates и curl." 10 60
+                whiptail --title "Ошибка" --msgbox "Не удалось установить ca-certificates и curl." 10 70
                 return 1 ;;
             ERR_GPG)
-                whiptail --title "Ошибка" --msgbox "Не удалось скачать GPG ключ репозитория Docker." 10 60
+                whiptail --title "Ошибка" --msgbox "Не удалось скачать GPG ключ репозитория Docker." 10 70
                 return 1 ;;
             ERR_UPDATE)
-                whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов после подключения репозитория Docker." 10 60
+                whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов после подключения репозитория Docker." 10 70
                 return 1 ;;
             ERR_INSTALL)
-                whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакеты Docker Engine." 10 60
+                whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакеты Docker Engine." 10 70
                 return 1 ;;
         esac
     fi
@@ -419,7 +419,7 @@ setup_docker() {
     local compose_ver
     compose_ver=$(docker compose version 2>/dev/null || echo "Неизвестно")
 
-    whiptail --title "Установка Docker" --msgbox "Docker и Docker Compose успешно установлены!\n\nВерсия Docker: $docker_ver\nВерсия Compose: $compose_ver\n\n$docker_group_msg" 14 65
+    whiptail --title "Установка Docker" --msgbox "Docker и Docker Compose успешно установлены!\n\nВерсия Docker: $docker_ver\nВерсия Compose: $compose_ver\n\n$docker_group_msg" 14 78
 }
 
 # Динамический опрос версий Node.js и их установка
@@ -472,7 +472,7 @@ setup_nodejs() {
     # Показываем TUI-меню выбора версии Node.js
     local node_choice
     node_choice=$(whiptail --title "Выбор версии Node.js" --radiolist \
-        "Выберите мажорную версию Node.js для установки через репозиторий NodeSource:" 16 65 5 \
+        "Выберите мажорную версию Node.js для установки через репозиторий NodeSource:" 16 75 5 \
         "${node_versions[@]}" 3>&1 1>&2 2>&3)
 
     if [ $? -ne 0 ] || [ -z "$node_choice" ]; then
@@ -516,7 +516,7 @@ setup_nodejs() {
         # Шаг 3/3: Готово
         printf "XXX\n100\n[3/3] Готово!\nXXX\n"
 
-    } | whiptail --title "Установка Node.js" --gauge "Подготовка..." 8 65 0
+    } | whiptail --title "Установка Node.js" --gauge "Подготовка..." 8 78 0
 
     # Проверяем ошибки из сабшелла
     if [ -s "$tmpfail" ]; then
@@ -525,10 +525,10 @@ setup_nodejs() {
         rm -f "$tmpfail"
         case "$node_err" in
             ERR_NODESOURCE)
-                whiptail --title "Ошибка" --msgbox "Не удалось подключить репозиторий NodeSource для Node.js v${node_choice}.x." 10 60
+                whiptail --title "Ошибка" --msgbox "Не удалось подключить репозиторий NodeSource для Node.js v${node_choice}.x." 10 72
                 return 1 ;;
             ERR_INSTALL)
-                whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакет nodejs из репозитория NodeSource." 10 60
+                whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакет nodejs из репозитория NodeSource." 10 70
                 return 1 ;;
         esac
     fi
@@ -539,7 +539,7 @@ setup_nodejs() {
     local installed_npm_ver
     installed_npm_ver=$(npm -v 2>/dev/null || echo "Неизвестно")
 
-    whiptail --title "Установка Node.js" --msgbox "Node.js успешно установлен!\n\nВерсия Node.js: $installed_node_ver\nВерсия npm: $installed_npm_ver" 12 60
+    whiptail --title "Установка Node.js" --msgbox "Node.js успешно установлен!\n\nВерсия Node.js: $installed_node_ver\nВерсия npm: $installed_npm_ver" 12 70
 }
 
 # ==============================================================================
@@ -551,7 +551,7 @@ menu_server_settings() {
     while true; do
         local server_choice
         server_choice=$(whiptail --title "Настройка сервера" --checklist \
-            "Выберите действия по настройке системы (клавиша Пробел для выбора):" 16 65 3 \
+            "Выберите действия по настройке системы (клавиша Пробел для выбора):" 16 75 3 \
             "LOCALE" "Установить русскую локаль (ru_RU.UTF-8)" ON \
             "TIMEZONE" "Установить часовой пояс Asia/Novokuznetsk" ON \
             "LXC_AUTO" "Настроить автологин root для LXC Proxmox" OFF 3>&1 1>&2 2>&3)
@@ -570,7 +570,7 @@ menu_server_settings() {
             setup_lxc_autologin
         fi
         
-        whiptail --title "Настройка сервера" --msgbox "Выбранные настройки применены." 8 50
+        whiptail --title "Настройка сервера" --msgbox "Выбранные настройки применены." 8 60
         break
     done
 }
@@ -580,7 +580,7 @@ menu_base_apps() {
     while true; do
         local app_choices
         app_choices=$(whiptail --title "Установка базового ПО" --checklist \
-            "Выберите программы для установки (клавиша Пробел для выбора):" 17 65 6 \
+            "Выберите программы для установки (клавиша Пробел для выбора):" 17 75 6 \
             "NANO" "Удобный текстовый редактор Nano" ON \
             "ZIP" "Архиваторы zip и unzip" ON \
             "GIT" "Система контроля версий Git" ON \
@@ -602,7 +602,7 @@ main_menu() {
     while true; do
         local menu_choice
         menu_choice=$(whiptail --title "Server Auto Setup Script v1.0" --menu \
-            "Выберите раздел для продолжения настройки:" 15 65 5 \
+            "Выберите раздел для продолжения настройки:" 15 75 5 \
             "1" "Настройка сервера (Локаль, Таймзона, LXC Автологин)" \
             "2" "Установка базового ПО (Nano, Zip, Git, SSH, Сетевые утилиты)" \
             "3" "Установка Docker и Docker Compose" \
