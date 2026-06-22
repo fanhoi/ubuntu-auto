@@ -229,18 +229,37 @@ setup_base_packages() {
         fi
     fi
 
-    show_progress "Установка выбранных пакетов: ${pkgs_to_install[*]}..."
+    show_progress "Обновление списков пакетов APT..."
     if ! run_apt_update; then
         whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов apt. Проверьте подключение к сети." 10 60
         return 1
     fi
-    
+
+    # Устанавливаем пакеты с отображением прогресс-бара (gauge)
+    local total=${#pkgs_to_install[@]}
+    local tmpfail
+    tmpfail=$(mktemp)
+
+    {
+        local i=0
+        for pkg in "${pkgs_to_install[@]}"; do
+            i=$((i + 1))
+            local pct=$(( i * 100 / total ))
+            printf "XXX\n%d\n[%d/%d] Устанавливается: %s\nXXX\n" "$pct" "$i" "$total" "$pkg"
+            if ! $SUDO apt-get install -y "$pkg" >/dev/null 2>&1; then
+                echo "$pkg" >> "$tmpfail"
+            fi
+        done
+    } | whiptail --title "Установка ПО" --gauge "Подготовка..." 8 65 0
+
+    # Читаем список неудавшихся пакетов из временного файла (сабшелл трубы не может изменять переменные родителя)
     local -a failed_pkgs=()
-    for pkg in "${pkgs_to_install[@]}"; do
-        if ! $SUDO apt-get install -y "$pkg" >/dev/null 2>&1; then
+    if [ -s "$tmpfail" ]; then
+        while IFS= read -r pkg; do
             failed_pkgs+=("$pkg")
-        fi
-    done
+        done < "$tmpfail"
+    fi
+    rm -f "$tmpfail"
 
     if [ ${#failed_pkgs[@]} -gt 0 ]; then
         whiptail --title "Ошибка установки" --msgbox "Не удалось установить следующие программы:\n${failed_pkgs[*]}\n\nПопробуйте запустить установку заново." 10 60
@@ -280,70 +299,99 @@ Subsystem sftp /usr/lib/openssh/sftp-server" | $SUDO tee /etc/ssh/sshd_config > 
 
 # Установка Docker, Docker Compose плагина и создание совместимого симлинка
 setup_docker() {
-    show_progress "Установка Docker и Docker Compose..."
-
-    # Удаляем потенциально конфликтующие старые пакеты
-    for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
-        $SUDO apt-get remove -y "$pkg" >/dev/null 2>&1 || true
-    done
-
-    # Установка базовых утилит для репозиториев apt
-    run_apt_update
-    if ! $SUDO apt-get install -y ca-certificates curl >/dev/null 2>&1; then
-        whiptail --title "Ошибка" --msgbox "Не удалось установить вспомогательные утилиты ca-certificates и curl." 10 60
-        return 1
-    fi
-    
-    $SUDO install -m 0755 -d /etc/apt/keyrings >/dev/null 2>&1
-
-    # Динамически определяем URL репозитория и кодовое имя дистрибутива (для Debian или Ubuntu)
+    # Определяем URL репозитория и кодовое имя дистрибутива ДО запуска gauge
     local repo_url="https://download.docker.com/linux/ubuntu"
-    local codename
+    local codename=""
     if [ -f /etc/os-release ]; then
         codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
     fi
-    
-    # Если не удалось получить из /etc/os-release, пробуем lsb_release
     if [ -z "$codename" ] && command -v lsb_release >/dev/null 2>&1; then
         codename=$(lsb_release -cs 2>/dev/null)
     fi
-    
     if [ "$OS_ID" = "debian" ]; then
         repo_url="https://download.docker.com/linux/debian"
     fi
-
     if [ -z "$codename" ]; then
         whiptail --title "Ошибка" --msgbox \
             "Не удалось определить codename Linux-дистрибутива через /etc/os-release или lsb_release." 10 70
         return 1
     fi
 
-    # Добавление официального GPG ключа Docker
-    if ! $SUDO curl -fsSL "${repo_url}/gpg" -o /etc/apt/keyrings/docker.asc >/dev/null 2>&1; then
-        whiptail --title "Ошибка" --msgbox "Не удалось скачать GPG ключ репозитория Docker." 10 60
-        return 1
-    fi
-    $SUDO chmod a+r /etc/apt/keyrings/docker.asc >/dev/null 2>&1
+    # Временный файл для передачи ошибок из сабшелла gauge
+    local tmpfail
+    tmpfail=$(mktemp)
 
-    # Добавление репозитория в APT
-    echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] ${repo_url} \
-      ${codename} stable" | $SUDO tee /etc/apt/sources.list.d/docker.list > /dev/null
+    # Поэтапная установка Docker с прогресс-баром
+    {
+        # Шаг 1/6: Удаление старых пакетов
+        printf "XXX\n10\n[1/6] Удаление конфликтующих пакетов...\nXXX\n"
+        for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
+            $SUDO apt-get remove -y "$pkg" >/dev/null 2>&1 || true
+        done
 
-    if ! $SUDO apt-get update >/dev/null 2>&1; then
-        whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов после подключения репозитория Docker." 10 60
-        return 1
-    fi
-    
-    # Установка пакетов Docker Engine
-    if ! $SUDO apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1; then
-        whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакеты Docker Engine." 10 60
-        return 1
-    fi
+        # Шаг 2/6: Обновление индекса APT и базовые зависимости
+        printf "XXX\n25\n[2/6] Установка ca-certificates и curl...\nXXX\n"
+        run_apt_update
+        if ! $SUDO apt-get install -y ca-certificates curl >/dev/null 2>&1; then
+            echo "ERR_CACERT" >> "$tmpfail"
+            exit 0
+        fi
+        $SUDO install -m 0755 -d /etc/apt/keyrings >/dev/null 2>&1
 
-    # Запуск и добавление демона в автозагрузку
-    $SUDO systemctl enable docker >/dev/null 2>&1 || true
-    $SUDO systemctl start docker >/dev/null 2>&1 || true
+        # Шаг 3/6: Скачивание GPG ключа Docker
+        printf "XXX\n40\n[3/6] Загрузка GPG ключа Docker...\nXXX\n"
+        if ! $SUDO curl -fsSL "${repo_url}/gpg" -o /etc/apt/keyrings/docker.asc >/dev/null 2>&1; then
+            echo "ERR_GPG" >> "$tmpfail"
+            exit 0
+        fi
+        $SUDO chmod a+r /etc/apt/keyrings/docker.asc >/dev/null 2>&1
+
+        # Шаг 4/6: Добавление репозитория Docker в APT
+        printf "XXX\n55\n[4/6] Подключение репозитория Docker...\nXXX\n"
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] ${repo_url} ${codename} stable" \
+            | $SUDO tee /etc/apt/sources.list.d/docker.list > /dev/null
+        if ! $SUDO apt-get update >/dev/null 2>&1; then
+            echo "ERR_UPDATE" >> "$tmpfail"
+            exit 0
+        fi
+
+        # Шаг 5/6: Установка Docker Engine
+        printf "XXX\n70\n[5/6] Установка Docker Engine (может занять несколько минут)...\nXXX\n"
+        if ! $SUDO apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin >/dev/null 2>&1; then
+            echo "ERR_INSTALL" >> "$tmpfail"
+            exit 0
+        fi
+
+        # Шаг 6/6: Запуск и автозагрузка демона
+        printf "XXX\n90\n[6/6] Запуск службы Docker...\nXXX\n"
+        $SUDO systemctl enable docker >/dev/null 2>&1 || true
+        $SUDO systemctl start docker >/dev/null 2>&1 || true
+
+        printf "XXX\n100\n[6/6] Готово!\nXXX\n"
+
+    } | whiptail --title "Установка Docker" --gauge "Подготовка..." 8 65 0
+
+    # Проверяем наличие ошибок из сабшелла
+    if [ -s "$tmpfail" ]; then
+        local docker_err
+        docker_err=$(cat "$tmpfail")
+        rm -f "$tmpfail"
+        case "$docker_err" in
+            ERR_CACERT)
+                whiptail --title "Ошибка" --msgbox "Не удалось установить ca-certificates и curl." 10 60
+                return 1 ;;
+            ERR_GPG)
+                whiptail --title "Ошибка" --msgbox "Не удалось скачать GPG ключ репозитория Docker." 10 60
+                return 1 ;;
+            ERR_UPDATE)
+                whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов после подключения репозитория Docker." 10 60
+                return 1 ;;
+            ERR_INSTALL)
+                whiptail --title "Ошибка установки" --msgbox "Не удалось установить пакеты Docker Engine." 10 60
+                return 1 ;;
+        esac
+    fi
+    rm -f "$tmpfail"
 
     # Добавление пользователя в группу docker для работы без sudo (берем SUDO_USER, если запуск под sudo)
     local real_user="$USER"
