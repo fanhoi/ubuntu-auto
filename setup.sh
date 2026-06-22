@@ -229,6 +229,7 @@ setup_base_packages() {
     if [[ "$choices" =~ "SSH" ]]; then pkgs_to_install+=("openssh-server"); fi
     if [[ "$choices" =~ "SPEEDTEST" ]]; then pkgs_to_install+=("speedtest-cli"); fi
     if [[ "$choices" =~ "IPERF" ]]; then pkgs_to_install+=("iperf3"); fi
+    if [[ "$choices" =~ "PYTHON" ]]; then pkgs_to_install+=("python3" "python3-pip" "python3-venv" "python-is-python3"); fi
 
     if [ ${#pkgs_to_install[@]} -eq 0 ]; then
         return
@@ -701,15 +702,23 @@ menu_base_apps() {
             iperf_state="OFF"
         fi
 
+        local python_desc="Интерпретатор Python 3 и менеджер пакетов pip"
+        local python_state="ON"
+        if command -v python3 >/dev/null 2>&1 && command -v pip3 >/dev/null 2>&1; then
+            python_desc="Интерпретатор Python 3 и менеджер пакетов pip (уже установлено)"
+            python_state="OFF"
+        fi
+
         local app_choices
         app_choices=$(whiptail --title "Установка базового ПО" --checklist \
-            "Выберите программы для установки (клавиша Пробел для выбора):" 17 75 6 \
+            "Выберите программы для установки (клавиша Пробел для выбора):" 18 75 7 \
             "NANO" "$nano_desc" "$nano_state" \
             "ZIP" "$zip_desc" "$zip_state" \
             "GIT" "$git_desc" "$git_state" \
             "SSH" "$ssh_desc" "$ssh_state" \
             "SPEEDTEST" "$speedtest_desc" "$speedtest_state" \
-            "IPERF" "$iperf_desc" "$iperf_state" 3>&1 1>&2 2>&3)
+            "IPERF" "$iperf_desc" "$iperf_state" \
+            "PYTHON" "$python_desc" "$python_state" 3>&1 1>&2 2>&3)
 
         if [ $? -ne 0 ]; then
             break # Возврат в главное меню
@@ -731,7 +740,7 @@ setup_all() {
     setup_lxc_autologin || true
 
     # 2. Устанавливаем все базовое ПО с автонастройкой SSH
-    setup_base_packages "NANO ZIP GIT SSH SPEEDTEST IPERF" "auto"
+    setup_base_packages "NANO ZIP GIT SSH SPEEDTEST IPERF PYTHON" "auto"
 
     # 3. Устанавливаем Docker
     setup_docker "auto"
