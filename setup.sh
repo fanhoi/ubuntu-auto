@@ -258,6 +258,12 @@ setup_nodejs() {
         return
     fi
 
+    show_progress "Очистка старой версии Node.js..."
+    log_info "Удаление старого пакета nodejs и автоочистка зависимостей..."
+    $SUDO apt-get remove -y nodejs >> "$LOG_FILE" 2>&1 || true
+    $SUDO apt-get purge -y nodejs >> "$LOG_FILE" 2>&1 || true
+    $SUDO apt-get autoremove -y >> "$LOG_FILE" 2>&1 || true
+
     show_progress "Настройка NodeSource для Node.js v${node_choice}.x..."
     log_info "Настройка NodeSource репозитория для Node.js v${node_choice}.x"
 
@@ -273,7 +279,7 @@ setup_nodejs() {
 
     show_progress "Установка Node.js v${node_choice}.x..."
     $SUDO apt-get update >> "$LOG_FILE" 2>&1
-    $SUDO apt-get install -y --allow-downgrades nodejs >> "$LOG_FILE" 2>&1
+    $SUDO apt-get install -y nodejs >> "$LOG_FILE" 2>&1
 
     local installed_node_ver
     installed_node_ver=$(node -v 2>/dev/null || echo "Неизвестно")
