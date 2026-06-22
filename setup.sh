@@ -280,7 +280,15 @@ setup_docker() {
     # Динамически определяем URL репозитория и кодовое имя дистрибутива (для Debian или Ubuntu)
     local repo_url="https://download.docker.com/linux/ubuntu"
     local codename
-    codename=$(. /etc/os-release && echo "$VERSION_CODENAME" 2>/dev/null || . /etc/os-release && echo "$VERSION_CODENODE")
+    if [ -f /etc/os-release ]; then
+        codename=$(. /etc/os-release
+            if [ -n "$VERSION_CODENAME" ]; then
+                echo "$VERSION_CODENAME"
+            elif [ -n "$VERSION_CODENODE" ]; then
+                echo "$VERSION_CODENODE"
+            fi
+        )
+    fi
     
     # Если не удалось получить из /etc/os-release, пробуем lsb_release
     if [ -z "$codename" ] && command -v lsb_release >/dev/null 2>&1; then
