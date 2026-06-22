@@ -21,6 +21,12 @@ if [ "$EUID" -ne 0 ]; then
     fi
 fi
 
+# Определение операционной системы (для универсальности скрипта)
+OS_ID="ubuntu" # Значение по умолчанию
+if [ -f /etc/os-release ]; then
+    OS_ID=$(. /etc/os-release && echo "$ID")
+fi
+
 # ==============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # ==============================================================================
@@ -104,11 +110,32 @@ Uptime:         $uptime_info
 setup_russian_locale() {
     show_progress "Настройка русской локали (ru_RU.UTF-8)..."
     
-    if ! $SUDO apt-get update >/dev/null 2>&1 || ! $SUDO apt-get install -y language-pack-ru >/dev/null 2>&1; then
-        whiptail --title "Ошибка локализации" --msgbox "Не удалось установить пакет локализации language-pack-ru. Проверьте интернет-соединение." 10 60
-        return 1
+    if [ "$OS_ID" = "ubuntu" ]; then
+        # Для Ubuntu ставим готовый языковой пакет
+        if ! $SUDO apt-get update >/dev/null 2>&1 || ! $SUDO apt-get install -y language-pack-ru >/dev/null 2>&1; then
+            whiptail --title "Ошибка локализации" --msgbox "Не удалось установить пакет локализации language-pack-ru. Проверьте интернет-соединение." 10 60
+            return 1
+        fi
+    elif [ "$OS_ID" = "debian" ]; then
+        # Для Debian устанавливаем locales и генерируем локаль вручную
+        if ! $SUDO apt-get update >/dev/null 2>&1 || ! $SUDO apt-get install -y locales >/dev/null 2>&1; then
+            whiptail --title "Ошибка локализации" --msgbox "Не удалось установить пакет locales. Проверьте интернет-соединение." 10 60
+            return 1
+        fi
+        
+        # Раскомментируем русскую локаль в файле locale.gen
+        if [ -f /etc/locale.gen ]; then
+            $SUDO sed -i 's/# ru_RU.UTF-8 UTF-8/ru_RU.UTF-8 UTF-8/' /etc/locale.gen
+        fi
+        
+        # Запускаем генерацию локали
+        if ! $SUDO locale-gen >/dev/null 2>&1; then
+            whiptail --title "Ошибка локализации" --msgbox "Не удалось сгенерировать локаль ru_RU.UTF-8." 10 60
+            return 1
+        fi
     fi
     
+    # Обновляем локаль системы (универсально для обеих систем)
     if ! $SUDO update-locale LANG=ru_RU.UTF-8 >/dev/null 2>&1; then
         whiptail --title "Ошибка локализации" --msgbox "Не удалось обновить локаль системы через update-locale." 10 60
         return 1
@@ -250,25 +277,34 @@ setup_docker() {
     
     $SUDO install -m 0755 -d /etc/apt/keyrings >/dev/null 2>&1
 
+    # Динамически определяем URL репозитория и кодовое имя дистрибутива (для Debian или Ubuntu)
+    local repo_url="https://download.docker.com/linux/ubuntu"
+    local codename
+    codename=$(. /etc/os-release && echo "$VERSION_CODENAME" 2>/dev/null || . /etc/os-release && echo "$VERSION_CODENODE")
+    
+    if [ "$OS_ID" = "debian" ]; then
+        repo_url="https://download.docker.com/linux/debian"
+        if [ -z "$codename" ]; then
+            codename="bookworm"
+        fi
+    else
+        # По умолчанию Ubuntu
+        if [ -z "$codename" ]; then
+            codename="jammy"
+        fi
+    fi
+
     # Добавление официального GPG ключа Docker
-    if ! $SUDO curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc >/dev/null 2>&1; then
+    if ! $SUDO curl -fsSL "${repo_url}/gpg" -o /etc/apt/keyrings/docker.asc >/dev/null 2>&1; then
         whiptail --title "Ошибка" --msgbox "Не удалось скачать GPG ключ репозитория Docker." 10 60
         return 1
     fi
     $SUDO chmod a+r /etc/apt/keyrings/docker.asc >/dev/null 2>&1
 
-    # Определение кодового имени Ubuntu (например, focal, jammy, noble)
-    local ubuntu_codename
-    ubuntu_codename=$(. /etc/os-release && echo "$VERSION_CODENAME" 2>/dev/null || . /etc/os-release && echo "$VERSION_CODENODE")
-    
-    if [ -z "$ubuntu_codename" ]; then
-        ubuntu_codename="jammy"
-    fi
-
     # Добавление репозитория в APT
     echo \
-      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-      $ubuntu_codename stable" | $SUDO tee /etc/apt/sources.list.d/docker.list > /dev/null
+      "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] ${repo_url} \
+      ${codename} stable" | $SUDO tee /etc/apt/sources.list.d/docker.list > /dev/null
 
     if ! $SUDO apt-get update >/dev/null 2>&1; then
         whiptail --title "Ошибка" --msgbox "Не удалось обновить списки пакетов после подключения репозитория Docker." 10 60
