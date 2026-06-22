@@ -44,6 +44,6 @@ bash -c "$(wget -qO- https://raw.githubusercontent.com/fanhoi/ubuntu-auto/main/s
 
 ## Требования
 
-- ОС: Debian 11 / 12, Ubuntu 20.04 / 22.04 / 24.04
+- ОС: Debian / Ubuntu (любые современные версии)
 - Пользователь с правами `sudo` или `root`
 - Наличие интернет-соединения
